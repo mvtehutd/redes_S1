@@ -121,4 +121,3 @@ class PTY:
         Envia dados para a linha serial
         """
         os.write(self.pty, dados)
-

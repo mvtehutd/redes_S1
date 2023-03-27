@@ -76,14 +76,15 @@ class Conexao:
 
     def reenvio(self):
         self.isreenvio = True
-        if(len(self.dados) > MSS):
-            self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados[0: MSS], self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
-        else:
-            self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados, self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
-        if(self.janela > MSS):
-            self.janela = int(self.janela / MSS / 2 + 0.5) * MSS
-        print("REDUZ JANELA: " + str(self.janela))
-        self.verifica_timer()
+        if(self.dados):
+            if(len(self.dados) > MSS):
+                self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados[0: MSS], self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
+            else:
+                self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados, self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
+            if(self.janela > MSS):
+                self.janela = int(self.janela / MSS / 2 + 0.5) * MSS
+            print("REDUZ JANELA: " + str(self.janela))
+            self.verifica_timer()
     
     def verifica_timer(self):
         if (self.timer):
@@ -98,7 +99,7 @@ class Conexao:
             if(self.isreenvio):
                 self.isreenvio = False
             else:
-                if(len(self.dados) == self.janela):
+                if(self.dados and len(self.dados) == self.janela):
                     self.janela += MSS
 
                 if(self.sampleRTT == 0):
@@ -125,7 +126,7 @@ class Conexao:
         elif((flags & FLAGS_FIN) == FLAGS_FIN):
             self.callback(self, b'')
             self.ack_no = seq_no + 1
-            self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.seq_no, self.ack_no, FLAGS_ACK), self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
+            self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.seq_no, self.ack_no, FLAGS_FIN|FLAGS_ACK), self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
         elif(len(payload) == 0 and ack_no > self.seq_no):
             # payload tamanho 0 é encontrado na solicitação de conexão, que não vem para cá; acks, mas que o ack_no é igual ao self.seq_no,
             # Exceto no desligamento, em que propositalmente não foi incrementado 1 ao self.seq_no.
