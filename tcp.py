@@ -58,7 +58,7 @@ class Conexao:
         self.servidor = servidor
         self.id_conexao = id_conexao
         self.callback = None
-        self.dados = None
+        self.dados = []
         self.send_base = seq_no
         self.seq_no = seq_no # do servidor
         self.ack_no = ack_no # do servidor
@@ -77,10 +77,10 @@ class Conexao:
     def reenvio(self):
         self.isreenvio = True
         if(self.dados):
-            if(len(self.dados) > MSS):
-                self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados[0: MSS], self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
+            if(len(self.dados[0]) > MSS):
+                self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados[0][0: MSS], self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
             else:
-                self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados, self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
+                self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.send_base, self.ack_no, FLAGS_ACK) + self.dados[0], self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
             if(self.janela > MSS):
                 self.janela = int(self.janela / MSS / 2 + 0.5) * MSS
             print("REDUZ JANELA: " + str(self.janela))
@@ -99,7 +99,7 @@ class Conexao:
             if(self.isreenvio):
                 self.isreenvio = False
             else:
-                if(self.dados and len(self.dados) == self.janela):
+                if(self.dados and self.seq_no - self.send_base == self.janela):
                     self.janela += MSS
 
                 if(self.sampleRTT == 0):
@@ -121,12 +121,12 @@ class Conexao:
         print("cliente : seq {}, ack {}, tam {}".format(seq_no, ack_no, len(payload)))
         if(seq_no == self.ack_no and len(payload) > 0):
             self.ack_no = seq_no + len(payload)
-            self.callback(self, payload)
             self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.seq_no, self.ack_no, FLAGS_ACK), self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
+            self.callback(self, payload)
         elif((flags & FLAGS_FIN) == FLAGS_FIN):
-            self.callback(self, b'')
             self.ack_no = seq_no + 1
             self.servidor.rede.enviar(fix_checksum(make_header(self.id_conexao[3], self.id_conexao[1], self.seq_no, self.ack_no, FLAGS_FIN|FLAGS_ACK), self.id_conexao[2], self.id_conexao[0]), self.id_conexao[0])
+            self.callback(self, b'')
         elif(len(payload) == 0 and ack_no > self.seq_no):
             # payload tamanho 0 é encontrado na solicitação de conexão, que não vem para cá; acks, mas que o ack_no é igual ao self.seq_no,
             # Exceto no desligamento, em que propositalmente não foi incrementado 1 ao self.seq_no.
@@ -136,15 +136,19 @@ class Conexao:
             if(ack_no > self.send_base):
                 self.send_base = ack_no
                 if(self.send_base < self.seq_no):
+                    # Caso tenha mais pacotes no vetor, deleta o primeiro quando confirmar ele
+                    if(len(self.dados[0][MSS:]) == 0):
+                        del self.dados[0]
+                    else:
+                        self.dados[0] = self.dados[0][MSS:]
                     self.verifica_timer()
-                    self.dados = self.dados[MSS:]
                 elif(self.fila):
                     print("CONTINUA")
                     self.enviar(self.fila)
                 else:
                     if(self.timer):
                         self.timer.cancel()
-                    self.dados = None
+                    del self.dados[0]
         else:
             self.conectado = True
         self.isreenvio = False
@@ -167,7 +171,8 @@ class Conexao:
         # Chame self.servidor.rede.enviar(segmento, dest_addr) para enviar o segmento
         # que você construir para a camada de rede.
         tam = len(dados)
-        self.send_base = self.seq_no
+        if(not self.dados):
+            self.send_base = self.seq_no
         x = min(tam, self.janela)
         print("TAMANHO DADOS: " + str(tam) + " | JANELA: " + str(self.janela) + " | X: " + str(x)+ " | VEZES: " + str(int((x + MSS - 1)/MSS)))
         for i in range(int((x + MSS - 1)/MSS)):
@@ -181,10 +186,10 @@ class Conexao:
                 self.verifica_timer()
         if(tam > self.janela):
             self.fila = dados[self.janela:]
-            self.dados = dados[0:self.janela]
+            self.dados.append(dados[0:self.janela])
             self.seq_no += self.janela
         else:
-            self.dados = dados
+            self.dados.append(dados)
             self.fila = None
             self.seq_no += tam
         self.tempoEnvio = time.time()
