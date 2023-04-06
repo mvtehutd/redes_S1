@@ -144,6 +144,7 @@ class Conexao:
                     self.verifica_timer()
                 elif(self.fila):
                     print("CONTINUA")
+                    del self.dados[0]
                     self.enviar(self.fila)
                 else:
                     if(self.timer):
